@@ -1,0 +1,49 @@
+#include "timemanagement.h"
+
+TimeManagement::TimeManagement()
+{
+    _MeasurementDate.setDate(2000,01,01);
+    _MeasurementTime.setHMS(00,00,00);
+    _MeasurementDuration.setHMS(00,00,00,000);
+}
+
+void TimeManagement::setMeasurement(QDate MeasurementDate, QTime MeasurementTime, QTime MeasurementDuration)
+{
+    _MeasurementDate = MeasurementDate;
+    _MeasurementTime = MeasurementTime;
+    _MeasurementDuration = MeasurementDuration;
+}
+
+void TimeManagement::setDate(QDate MeasurementDate)
+{
+    _MeasurementDate = MeasurementDate;
+}
+
+QDate TimeManagement::getDate()
+{
+    return _MeasurementDate;
+}
+
+void TimeManagement::setTime(QTime MeasurementTime)
+{
+    _MeasurementTime = MeasurementTime;
+}
+
+QTime TimeManagement::getTime()
+{
+    return _MeasurementTime;
+}
+
+void TimeManagement::setDuration(QTime MeasurementDuration)
+{
+    _MeasurementDuration = MeasurementDuration;
+}
+QTime TimeManagement::getDuration()
+{
+    return _MeasurementDuration;
+}
+
+QTime TimeManagement::
+
+
+

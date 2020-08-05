@@ -1,0 +1,480 @@
+#include "mainhandler.h"
+
+MainHandler::MainHandler()
+{
+
+}
+
+#include "mainWindow.h"
+#include "ui_mainwindow.h"
+#include <QDebug>
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QDataStream>
+#include <QMouseEvent>
+#include <QSettings>
+
+
+MainWindow::MainWindow(QWidget *parent) :
+    QMainWindow(parent),
+    ui(new Ui::MainWindow)
+{
+    ui->setupUi(this);
+
+
+    //Threads
+    simulatorThread                 = new QThread();
+
+    //Objects
+    _pController                    = new Controller();
+    hegDevice                       = new HEGSimulator();
+    _pData                          = new Data();
+    //Samples per Second is in used to create the first plot
+    _pData->setSamplesPerSecond(_pController->samplesPerSecond);
+
+    _pFileDialog                    = new widgetFileDialog(this,ui);
+    _pLineGraph                     = new WidgetLineGraph(ui, _pController,_pData);
+    _pResults                       = new Statistics(_pData,_pController);
+    _pDataHandler                   = new DataHandler(this, ui, _pController,_pResults);
+    _pStat                          = new WidgetStatistics(this, ui, _pController, _pData,_pResults);
+    _pBarGraph                      = new WidgetBarGraph(ui,_pController, _pData);
+    _pAdaptiveThreshold             = new AdaptiveThreshold(_pController);
+
+    //VideoPlayer, written in qml
+    _pQMLPlayer                     = new QObject();
+
+
+
+
+    _pVideoControl                  = new Video(this, ui,_pController);
+
+
+
+
+    QQuickView *view = new QQuickView();
+    QWidget *container = QWidget::createWindowContainer(view, this);
+    ui->verticalLayoutVideo->addWidget(container);
+
+    view->rootContext()->setContextProperty("myclassData",_pVideoControl);
+    view->setSource(QUrl(QStringLiteral("qrc:/video.qml")));
+    _pQMLPlayer = view->rootObject();
+    _pVideoControl->setQMLPlayer(_pQMLPlayer);
+
+
+
+    _pDatabase                      = new WidgetDatabase(this,ui,_pController);
+    _pSettings                      = new WidgetSettings(this,ui,_pController,_pData);
+    _pMainLayout                    = new MainLayout(this, ui, _pController, _pLineGraph, _pBarGraph, _pVideoControl, _pData, _pQMLPlayer);
+    _pMeasurement                   = new Measurement();
+    //Statusbar
+    _statusMousePositionlabel       = new QLabel(this);
+    _statusTimelabel                = new QLabel(this);
+    _statusClientlabel              = new QLabel(this);
+    //Timer
+    _startTime                      = new QTime();
+    _durationTimer                  = new QTimer();
+    _framerateTimer                 = new QTimer();
+
+    //Workerthreds and Threads
+    hegDevice                      -> moveToThread(simulatorThread);
+
+    //Actions
+    connect(ui->DatabaseButton,SIGNAL(clicked()),_pDatabase,SLOT(show()));
+
+
+    connect(ui->newMeasurement_pushButton,  SIGNAL(clicked(bool)),  this,         SLOT(reset()));
+    //Media
+    //connect(ui->openVideo_Button, SIGNAL(clicked(bool)),   _pFileDialog,  SLOT(videoCall()));
+    connect(ui->openVideo_Button, SIGNAL(clicked(bool)),   this,  SLOT(chooseVideoFile()));
+    connect(ui->muteCheck,           SIGNAL(toggled(bool)), _pVideoControl,  SLOT(mute(bool)));
+    //Layout
+    connect(_pSettings,SIGNAL(barGraphShow(bool)),_pMainLayout,SLOT(updateBarGraph(bool)));
+    connect(_pSettings,SIGNAL(lineGraphShow(bool)),_pMainLayout,SLOT(updateLineGraph(bool)));
+    connect(_pSettings,SIGNAL(videoShow(bool)),_pMainLayout,SLOT(updateVideo(bool)));
+
+
+
+
+    //Push Buttons
+    connect(ui->startButton, SIGNAL(clicked()),this, SLOT(start()));
+    connect(ui->pauseButton, SIGNAL(clicked()),this, SLOT(pause()));
+    connect(ui->stopButton,  SIGNAL(clicked()),this, SLOT(stop()));
+
+
+    //AnalyseViewButtons
+    connect(_pSettings,SIGNAL(totalChartRequest()),this, SLOT(totalChart()));
+    connect(_pSettings,SIGNAL(trendChartRequest()),this, SLOT(trendChart()));
+
+    //Emits
+    connect(hegDevice,          SIGNAL(newDatafromDevice(int, double,double)),this,      SLOT(newData(int,double,double)));
+    connect(_pController,       SIGNAL(setNewVideo(QString)),_pVideoControl,                 SLOT(setMedia(QString)));
+    connect(_pController,       SIGNAL(concentrationChange(bool)),this,                     SLOT(saveChangedGoal(bool)));
+    connect(_pStat,          SIGNAL(requestPartChartAt(int)),this,                       SLOT(partChartAt(int)));
+
+    //VideoPlayer
+    connect(_pVideoControl, SIGNAL(VideoPath(QString)),_pController, SLOT(setVideoPath(QString)));
+    connect(_pVideoControl, SIGNAL(mediaUpdate()),this,              SLOT(VideoLayoutStackHandler()));
+
+    //LineGraph
+    connect(_pLineGraph, SIGNAL(offlineBarGraph(int)),_pBarGraph,      SLOT(offlineBarGraphCall(int)));
+    connect(this,        SIGNAL(sceneMouseEventTrigger()),_pLineGraph, SLOT(sceneMouseEvent()));
+    connect(_pLineGraph, SIGNAL(positionLabel(int)),this,              SLOT(positionLabel(int)));
+
+    //Settings
+    connect(_pSettings,      SIGNAL(settingsChanged()),this, SLOT(changedSettings()));
+    //DatabaseDialog
+    connect(_pDataHandler, SIGNAL(forwardingToDatabase()),_pDatabase,              SLOT(show()));
+    connect(_pDatabase,    SIGNAL(dbClientChanged(Client)),this,                   SLOT(clientChanged(Client)));
+    connect(_pDataHandler, SIGNAL(updateDatabasedialog(Client)),_pDatabase,        SLOT(loadFilesFromClient(Client)));
+    connect(this,          SIGNAL(showDatabase()),_pDatabase,                      SLOT(show()));
+
+    //Timer
+    connect(_durationTimer,  SIGNAL(timeout()), this,        SLOT(mytimerEvent()));
+    connect(_framerateTimer, SIGNAL(timeout()), this,        SLOT(videoHandler()));
+    connect(_framerateTimer, SIGNAL(timeout()), _pBarGraph,  SLOT(BarGraphHandler()));
+    connect(_framerateTimer, SIGNAL(timeout()), _pLineGraph, SLOT(LineGraphHandler()));
+    connect(_framerateTimer, SIGNAL(timeout()), this,      SLOT(adaptiveMinMax()));
+    //foreign Timer
+    connect(this, SIGNAL(TimerState(bool)),hegDevice,    SLOT(startDeviceHandler(bool)),            Qt::QueuedConnection);
+    connect(this, SIGNAL(stopHEGDevice(bool)),hegDevice, SLOT(startDeviceHandler(bool)),                 Qt::QueuedConnection);
+    connect(this, SIGNAL(stopHEGDevice(bool)),hegDevice, SLOT(deleteLater()));
+
+    //Database Load and Save Emits
+    connect(_pDatabase, SIGNAL(loadDataHandler(Client,Measurement)),this,          SLOT(reset()));
+    connect(_pDatabase, SIGNAL(loadDataHandler(Client,Measurement)),this, SLOT(loadEvent(Client,Measurement)));
+    connect(_pDatabase, SIGNAL(saveDataHandler(Client)),this,             SLOT(saveEvent(Client)));
+    connect(_pDatabase, SIGNAL(saveAsCSV(Client,Measurement)),_pDataHandler,       SLOT(saveAsCSV(Client,Measurement)));
+
+    //Slider
+    connect(ui->partChartSlider, SIGNAL(valueChanged(int)),this, SLOT(sliderValueChanged()));
+
+    //connect(_pFileDialog,SIGNAL(videoFilepath(QString)),_pVideoControl,SLOT(setFilepath(QString)));
+
+
+    //StatusBar
+    ui->statusBar->showMessage("HEGDevice connected");
+    ui->statusBar->addPermanentWidget(_statusMousePositionlabel);
+    ui->statusBar->addPermanentWidget(_statusTimelabel);
+    ui->statusBar->addPermanentWidget(_statusClientlabel);
+
+    //SET
+    //StatusBar
+    _statusMousePositionlabel->     setText("");
+    _statusMousePositionlabel->     setToolTip(tr("Click somewhere in the Chart for the x,y position"));
+    _statusTimelabel->              setText(tr("Elapsed Time"));
+    _statusClientlabel->            setText("");
+
+
+    this->setWindowState(Qt::WindowMaximized);
+    this->setWindowTitle(tr("MediTECH HEG Standalone"));
+    this->setMinimumSize(QSize(800,600));
+
+    ui->ConcentrationRadioButton->setChecked(true);
+    _pController->setDifficulty(1);
+    _pController->measurementIsActive = false;
+
+
+
+    _pVideoControl->setMedia(_pController->videoPath);
+
+
+    _pMainLayout->startLayout();
+
+
+}
+MainWindow::~MainWindow()
+{
+
+    //Objects
+    delete _pController;
+    delete _pFileDialog;
+    delete _pLineGraph;
+    delete _pDataHandler;
+    delete _pResults;
+    delete _pStat;
+    delete _pBarGraph;
+    delete _pAdaptiveThreshold;
+
+    delete  _pVideoControl;
+    delete _pDatabase;
+    delete _pSettings;
+    delete  _pMainLayout;
+    delete _pData;
+    delete _pMeasurement;
+    //Statusbar
+    delete _statusMousePositionlabel;
+    delete  _statusTimelabel;
+    delete  _statusClientlabel;
+    //Timer
+    delete  _startTime;
+    delete  _durationTimer;
+    delete _framerateTimer;
+}
+void MainWindow::showEvent(QShowEvent*)
+{
+    //Show firstPage
+    ui->stackedWidget->setCurrentIndex(0);
+    //Manages wich buttons are displayed and disabled
+    VideoLayoutStackHandler();
+    ui->totalTrendRadioButton->hide();
+    ui->totalTrendRadioButton->setChecked(false);
+}
+/**
+ * @brief MainWindow::start is called when the start Button was clicked
+ */
+void MainWindow::start()
+{
+    handleTimer("start");
+    if(_pController->pausedMeasurement!=true)
+    {
+        //Saving descriptive properties
+        _pMeasurement->setDate(QDate::currentDate());
+        _pMeasurement->setTime(QTime::currentTime());
+        _pController->realtimePlotting  = true;
+        _statusTimelabel->setText(tr("Measurement started"));
+        _pController->measurementIsActive = true;
+        ui->statusBar->showMessage(tr("Measurement started"), 2000);
+    }
+
+    //lastStart is used to calculate the total duration of the Measurement
+    lastStart = QTime::currentTime();
+
+    _pMainLayout->MeasurementButtonsHandler("started");
+    ui->MeasurementGoalgroupBox->setDisabled(false);
+    _pController->pausedMeasurement=false;
+
+    VideoLayoutStackHandler();
+}
+/**
+ * @brief MainWindow::pause is called when the button paused is clicked
+ */
+void MainWindow::pause()
+{
+    handleTimer("pause");
+    _pController->totalDurationTime = Controller::addDuration(_pController->totalDurationTime,QTime::fromMSecsSinceStartOfDay(_pController->checkMidnight(QTime::currentTime(),lastStart)));
+    _pController->pausedMeasurement = true;
+    _pMainLayout->MeasurementButtonsHandler("paused");
+
+    VideoLayoutStackHandler();
+}
+/**
+ * @brief MainWindow::stop is called when the Button stopped is clicked
+ */
+void MainWindow::stop()
+{
+    if(_pController->pausedMeasurement!=true)
+    {
+        _pController->totalDurationTime = Controller::addDuration(_pController->totalDurationTime,QTime::fromMSecsSinceStartOfDay(_pController->checkMidnight(QTime::currentTime(),lastStart)));
+    }
+    ui->totalTrendRadioButton->show();
+    ui->totalTrendRadioButton->setChecked(true);
+
+    handleTimer("stop");
+    hegDevice->resetHEGSimulator();
+
+    //Used to save the total Duration
+    _pMeasurement->setDuration(_pController->totalDurationTime);
+    _pController->measurementDuration = _pController->totalDurationTime;
+
+    //To save the last states of these Values SHOULD BE DATA AS WELL, data.appendState like that
+    saveChangedGoal(_pController->getConcentrationState());
+
+    _pData->setMeasurement(*_pMeasurement);
+
+    _pController->measurementisSaved = false;
+    _pController->measurementIsActive = false;
+    VideoLayoutStackHandler();
+    _statusTimelabel->setText(tr("Measurement stopped: ")+_pData->getMeasurement().getDuration().toString("hh:mm:ss"));    //(6)
+
+    totalChart();                                                                                                   //(4)
+
+    ui->statusBar->showMessage(tr("Data succesfully loaded"), 2000);
+
+    //Ask the user once if he wants to save or not
+    int decision = QMessageBox::question(this, tr("Measurement finished"),(tr("Do you want to save your measurement?")), QMessageBox::Yes|QMessageBox::No );
+    switch (decision)
+    {
+    case QMessageBox::Yes:
+        emit showDatabase();
+        break;
+    case QMessageBox::No:
+        break;
+    }
+
+    _pController->pausedMeasurement = false;
+
+}
+
+/**
+ * @brief MainWindow::changedSettings is called, when a setting is changed and the software should apply these settings
+ */
+void MainWindow::changedSettings()
+{
+    _pMainLayout->resizingEvent();
+    _pLineGraph->reset();
+    //sliderValueCalc is important here, because the slider need to adjust to the new Vector size before the current x Value is used to draw the LineGraph
+    sliderValueCalc();
+
+    //Coordinationsystem, Graph
+    if(_pController->realtimePlotting==true)
+    {
+        _pLineGraph->LineGraphHandler();
+    }
+    else
+    {
+        if(_pController->totalChartView==true)
+        {
+            totalChart();
+        }
+        else
+        {
+            trendChart();
+        }
+    }
+}
+
+/**
+ * @brief MainWindow::reset is used to set a new measurement or before loading other datas(load)
+ */
+void MainWindow::reset()
+{
+    if(_pController->measurementIsActive==true)
+    {
+        handleTimer("stop");
+        hegDevice->resetHEGSimulator();
+    }
+
+    if(_pController->notesAreSaved==false)
+    {
+        int decision = QMessageBox::warning(this, tr("You did not save your Notes"),(tr("Do you want save your Notes?\n\n")) ,QMessageBox::Yes|QMessageBox::No );
+        switch (decision)
+        {
+        case QMessageBox::Yes:
+            _pDataHandler->saveData(_pDatabase->getClient(_pController->currentClientID),_pData);
+            break;
+
+        case QMessageBox::No:
+            _pController->notesAreSaved = true;
+            break;
+        }
+    }
+
+    ui->totalTrendRadioButton->hide();
+    ui->totalTrendRadioButton->setChecked(false);
+
+
+    _pData->reset(_pController->samplesPerSecond);
+    _pController->resetAll();
+    _pLineGraph->reset();
+    _pBarGraph->reset();
+
+    ui->NotesTextEdit->clear();
+
+    //Layout
+    ui->radiotrend30->setChecked(true);
+    _pController->trendInSec = 10;
+    _pMainLayout->initTrainingView(); //Widgets on the page
+
+    //statusbar
+    _statusTimelabel->setText(tr("Elapsed Time"));
+    _statusMousePositionlabel->setText("");
+
+    this->setWindowTitle(tr("MediTECH HEG Standalone"));
+
+    ui->statusBar->showMessage(tr("reset succesfull"), 2000);
+}
+
+/**
+ * @brief MainWindow::clientChanged is called when the user has set a client as active
+ * @param currentClient
+ */
+void MainWindow::clientChanged(Client currentClient)
+{
+    _statusClientlabel->setText(currentClient.showClientString());
+    this->setWindowTitle(tr("HEG Training ")+ currentClient.getPrename() + " " + currentClient.getSurname());
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    //Warning if the notepad is filled but not saved
+    if(_pController->notesAreSaved==false && _pController->measurementisSaved==true)
+    {
+        int decision = QMessageBox::warning(this, tr("You did not save your Notes"),(tr("Do you want save your Notes?\n\n"))
+                                            ,QMessageBox::Yes|QMessageBox::No );
+        switch (decision)
+        {
+        case QMessageBox::Yes:
+            if (_pDataHandler->saveData(_pDatabase->getClient(_pController->currentClientID),_pData)==true)
+            {
+                event->accept();
+            }
+            break;
+
+        case QMessageBox::No:
+            event->accept();
+            break;
+        }
+    }
+}
+/**
+ * @brief MainWindow::saveChangedGoal method which saves the change and the x value
+ * @param concentrationChange
+ */
+void MainWindow::saveChangedGoal(bool concentrationChange)
+{
+    if(_pController->measurementIsActive==true)
+    {
+        _pData->appendState(concentrationChange,_pData->getRaw()->getRawDataVector().last().getX());
+    }
+}
+/**
+ * @brief MainWindow::saveEvent saves the Measurement under the choosen client. callback from widget database
+ * @param currentClient
+ */
+void MainWindow::saveEvent(Client currentClient)
+{
+    _pDataHandler->saveData(currentClient,_pData);
+}
+/**
+ * @brief MainWindow::loadEvent is the method which is displaying the data from the choosen client and choosen measurement callback from widget database
+ * @param currentClient
+ * @param measurement
+ */
+void MainWindow::loadEvent(Client currentClient, Measurement measurement)
+{
+    reset();
+
+    ui->totalTrendRadioButton->show();
+    ui->totalTrendRadioButton->setChecked(true);
+    _pData->setMeasurement(measurement);
+    _pDataHandler->loadData(currentClient,_pData);
+    this->setWindowTitle(_pDatabase->getClient(_pController->currentClientID).showClientString() + " | " + _pData->getMeasurement().showString());
+
+    totalChart();
+}
+
+/**
+ * @brief MainWindow::positionLabel called from linegraph after clicking at the linegraph to get the position -- Lastenheft HEG 3046
+ * @param position
+ */
+void MainWindow::positionLabel(int position)
+{
+    _statusMousePositionlabel->setText(tr("BarGraph at: ") + QTime::fromMSecsSinceStartOfDay(position*(1000/_pData->getSamplesPerSecond())).toString("mm:ss"));
+}
+
+void MainWindow::chooseVideoFile()
+{
+
+    QString filename = QFileDialog::getOpenFileName(this,tr("Open Video File"), QStandardPaths::standardLocations(QStandardPaths::MoviesLocation).last(), tr("Video Files (*.avi *.mpg *.mp4 *.mpeg *.wmv)"));
+
+    if (filename != "")
+    {
+        QFile file(filename);
+        if (!file.open(QIODevice::ReadOnly))
+        {
+            QMessageBox::information(this, tr("Error"), tr("Could not open file"));
+            return;
+        }
+    }
+    _pVideoControl->setFilepath(filename);
+}
