@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/">
+        <file>heggui_de.qm</file>
+        <file>heggui_en.qm</file>
+        <file>heggui_fr.qm</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,23 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file>Pause.png</file>
+        <file>Start.png</file>
+        <file>Stop.png</file>
+        <file>Meditech.jpg</file>
+        <file>left.png</file>
+        <file>right.png</file>
+        <file>Feedback.jpg</file>
+        <file>Result.jpg</file>
+        <file>Settings.jpg</file>
+        <file>Users.jpg</file>
+        <file>Start_Menu.jpg</file>
+        <file>App-Icon.png</file>
+        <file>Splash.png</file>
+        <file>HEG-APP-Schriftzug.png</file>
+        <file>Connection.png</file>
+        <file>Star.png</file>
+        <file>Info-Button.png</file>
+        <file>MTLogo.png</file>
+        <file>Stackoverflow.png</file>
+    </qresource>
+</RCC>

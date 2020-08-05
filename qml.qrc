@@ -1,0 +1,44 @@
+<RCC>
+    <qresource prefix="/">
+        <file>main.qml</file>
+        <file>UIBarGraphPart.qml</file>
+        <file>UILineGraphPart.qml</file>
+        <file>UIVideoPart.qml</file>
+        <file>UIYAxis_Coord.qml</file>
+        <file>UIPlayButtonPart.qml</file>
+        <file>UINotepadPart.qml</file>
+        <file>UITrendSelectPart.qml</file>
+        <file>UIVideoCtrlPart.qml</file>
+        <file>UIClientDataMainPart.qml</file>
+        <file>UIClientMeasurementPart.qml</file>
+        <file>UIDatabaseManagePart.qml</file>
+        <file>UIAnalyseTablePart.qml</file>
+        <file>UIClientDataSidePart.qml</file>
+        <file>UIDatabaseView.qml</file>
+        <file>UIAnalyseView.qml</file>
+        <file>UIChooseClientPart.qml</file>
+        <file>UIDifficultyButtonsPart.qml</file>
+        <file>UITrainingStateButtonsPart.qml</file>
+        <file>UIThresholdButtonsPart.qml</file>
+        <file>UITrainingSelectionsPart.qml</file>
+        <file>UIMainButtonsPart.qml</file>
+        <file>UITrainingView.qml</file>
+        <file>UILayoutButtonsPart.qml</file>
+        <file>UIController.qml</file>
+        <file>UIStatusBar.qml</file>
+        <file>UITrainingStates.qml</file>
+        <file>UITrainingMainWindow.qml</file>
+        <file>UIAnalyseMainWindow.qml</file>
+        <file>UIAnalyseSelectionsPart.qml</file>
+        <file>UIAnalyseStates.qml</file>
+        <file>UIAnalyseSettings.qml</file>
+        <file>UITrainingSettings.qml</file>
+        <file>UIClientBase.qml</file>
+        <file>UIDataBase.qml</file>
+        <file>UIChooseComponentPart.qmlc</file>
+        <file>UIDeviceListView.qml</file>
+        <file>UIMainMenu.qml</file>
+        <file>UIVideoControllersPart.qml</file>
+        <file>UIInfoPage.qml</file>
+    </qresource>
+</RCC>
